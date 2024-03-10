@@ -59,230 +59,152 @@ Shader Strength = Adjusts the weight of the color banding
 MMJuno
 */
 
-// Parameter lines go here:
-#pragma parameter WhtCutoff "White Level Cutoff" 0.97 0.50 1.00 0.01
-#pragma parameter BlkCutoff "Black Level Cutoff" 0.03 0.00 0.50 0.01
-#pragma parameter ShdLevels "Shading Levels" 9.0 1.0 16.0 1.0
-#pragma parameter SatModify "Saturation Modifier" 1.15 0.00 2.00 0.01
-#pragma parameter OtlModify "Outline Brightness" 0.20 0.00 1.00 0.01
-#pragma parameter ShdWeight "Shader Strength" 0.50 0.00 1.00 0.01
+#include "ReShade.fxh"
 
+uniform float WhtCutoff <
+	ui_type = "drag";
+	ui_min = 0.50;
+	ui_max = 1.0;
+	ui_step = 0.01;
+	ui_label = "White Level Cutoff [MMJCelShader]";
+> = 0.97;
 
-#if defined(VERTEX)
+uniform float BlkCutoff <
+	ui_type = "drag";
+	ui_min = 0.0;
+	ui_max = 0.5;
+	ui_step = 0.01;
+	ui_label = "Black Level Cutoff [MMJCelShader]";
+> = 0.03;
 
-#if __VERSION__ >= 130
-#define COMPAT_VARYING out
-#define COMPAT_ATTRIBUTE in
-#define COMPAT_TEXTURE texture
-#else
-#define COMPAT_VARYING varying 
-#define COMPAT_ATTRIBUTE attribute 
-#define COMPAT_TEXTURE texture2D
-#endif
+uniform float ShdLevels <
+	ui_type = "drag";
+	ui_min = 1.0;
+	ui_max = 16.0;
+	ui_step = 1.0;
+	ui_label = "Shading Levels [MMJCelShader]";
+> = 9.0;
 
-#ifdef GL_ES
-#define COMPAT_PRECISION mediump
-#else
-#define COMPAT_PRECISION
-#endif
+uniform float SatModify <
+	ui_type = "drag";
+	ui_min = 0.0;
+	ui_max = 2.0;
+	ui_step = 0.01;
+	ui_label = "Saturation Modifier [MMJCelShader]";
+> = 1.15;
 
-COMPAT_ATTRIBUTE vec4 VertexCoord;
-COMPAT_ATTRIBUTE vec4 COLOR;
-COMPAT_ATTRIBUTE vec4 TexCoord;
-COMPAT_VARYING vec4 COL0;
-COMPAT_VARYING vec4 TEX0;
-COMPAT_VARYING vec4 TEX1;
-COMPAT_VARYING vec4 TEX2;
-COMPAT_VARYING vec4 TEX3;
+uniform float OtlModify <
+	ui_type = "drag";
+	ui_min = 0.0;
+	ui_max = 1.0;
+	ui_step = 0.01;
+	ui_label = "Outline Brightness [MMJCelShader]";
+> = 0.20;
 
-vec4 _oPosition1; 
-uniform mat4 MVPMatrix;
-uniform COMPAT_PRECISION int FrameDirection;
-uniform COMPAT_PRECISION int FrameCount;
-uniform COMPAT_PRECISION vec2 OutputSize;
-uniform COMPAT_PRECISION vec2 TextureSize;
-uniform COMPAT_PRECISION vec2 InputSize;
+uniform float ShdWeight <
+	ui_type = "drag";
+	ui_min = 0.0;
+	ui_max = 1.0;
+	ui_step = 0.01;
+	ui_label = "Shader Strength [MMJCelShader]";
+> = 0.50;
 
-// compatibility #defines
-#define vTexCoord TEX0.xy
-#define SourceSize vec4(TextureSize, 1.0 / TextureSize) //either TextureSize or InputSize
-#define OutSize vec4(OutputSize, 1.0 / OutputSize)
+sampler RetroArchSRGB { Texture = ReShade::BackBufferTex; MinFilter = LINEAR; MagFilter = LINEAR; MipFilter = LINEAR; SRGBTexture = true;};
 
-void main()
+#define mod(x,y) (x-y*floor(x/y))
+
+float3 RGB2HCV(in float3 RGB)
 {
-    vec4 offset;
-
-    gl_Position = MVPMatrix * VertexCoord;
-    
-    TEX0 = TexCoord.xyxy;
-    
-    offset.xy = -(offset.zw = vec2(SourceSize.z, 0.0));
-    TEX1 = TEX0 + offset;
-    
-    offset.xy = -(offset.zw = vec2(0.0, SourceSize.w));
-    TEX2 = TEX0 + offset;
-    TEX3 = TEX1 + offset;
+	RGB = saturate(RGB);
+	float Epsilon = 1e-10;
+    	// Based on work by Sam Hocevar and Emil Persson
+    	float4 P = (RGB.g < RGB.b) ? float4(RGB.bg, -1.0, 2.0/3.0) : float4(RGB.gb, 0.0, -1.0/3.0);
+    	float4 Q = (RGB.r < P.x) ? float4(P.xyw, RGB.r) : float4(RGB.r, P.yzx);
+    	float C = Q.x - min(Q.w, Q.y);
+    	float H = abs((Q.w - Q.y) / (6 * C + Epsilon) + Q.z);
+    	return float3(H, C, Q.x);
 }
 
-#elif defined(FRAGMENT)
-
-#if __VERSION__ >= 130
-#define COMPAT_VARYING in
-#define COMPAT_TEXTURE texture
-out vec4 FragColor;
-#else
-#define COMPAT_VARYING varying
-#define FragColor gl_FragColor
-#define COMPAT_TEXTURE texture2D
-#endif
-
-#ifdef GL_ES
-#ifdef GL_FRAGMENT_PRECISION_HIGH
-precision highp float;
-#else
-precision mediump float;
-#endif
-#define COMPAT_PRECISION mediump
-#else
-#define COMPAT_PRECISION
-#endif
-
-uniform COMPAT_PRECISION int FrameDirection;
-uniform COMPAT_PRECISION int FrameCount;
-uniform COMPAT_PRECISION vec2 OutputSize;
-uniform COMPAT_PRECISION vec2 TextureSize;
-uniform COMPAT_PRECISION vec2 InputSize;
-uniform sampler2D Texture;
-COMPAT_VARYING vec4 TEX0;
-COMPAT_VARYING vec4 TEX1;
-COMPAT_VARYING vec4 TEX2;
-COMPAT_VARYING vec4 TEX3;
-
-// compatibility #defines
-#define Source Texture
-#define vTexCoord (TEX0.xy * TextureSize.xy / InputSize.xy)
-
-#define SourceSize vec4(TextureSize, 1.0 / TextureSize) //either TextureSize or InputSize
-#define OutSize vec4(OutputSize, 1.0 / OutputSize)
-
-#ifdef PARAMETER_UNIFORM
-uniform COMPAT_PRECISION float WhtCutoff;
-uniform COMPAT_PRECISION float BlkCutoff;
-uniform COMPAT_PRECISION float ShdLevels;
-uniform COMPAT_PRECISION float SatModify;
-uniform COMPAT_PRECISION float OtlModify;
-uniform COMPAT_PRECISION float ShdWeight;
-#else
-#define WhtCutoff 0.97
-#define BlkCutoff 0.03
-#define ShdLevels 9.0
-#define SatModify 1.15
-#define OtlModify 0.20
-#define ShdWeight 0.50
-#endif
-
-vec3 RGB2HSL(vec3 cRGB) 
+float3 RGB2HSL(in float3 RGB)
 {
-    float cR = cRGB[0], cG = cRGB[1], cB = cRGB[2];
-    float vMin = min(min(cR, cG), cB), vMax = max(max(cR, cG), cB);
-    float dMax = vMax - vMin, vS = 0.0, vH = 0.0, vL = (vMax + vMin) / 2.0;
-
-    // gray, no chroma
-    if(dMax == 0.0) { 
-      vH = 0.0; vS = vH; 
-      
-    // chromatic data
-    } else {
-        if(vL < 0.5) { vS = dMax / (vMax + vMin); }
-        else         { vS = dMax / (2.0 - vMax - vMin); }
-
-        float dR = (((vMax - cR) * 0.1667) + (dMax * 0.5)) / dMax;
-        float dG = (((vMax - cG) * 0.1667) + (dMax * 0.5)) / dMax;
-        float dB = (((vMax - cB) * 0.1667) + (dMax * 0.5)) / dMax;
-
-        if     (cR >= vMax) { vH = dB - dG; }
-        else if(cG >= vMax) { vH = 0.3333 + dR - dB; }
-        else if(cB >= vMax) { vH = 0.6667 + dG - dR; }
-
-        if     (vH < 0.0) { vH += 1.0; }
-        else if(vH > 1.0) { vH -= 1.0; }
-    }
-    return vec3(vH, vS, vL);
+    	float3 HCV = RGB2HCV(RGB);
+    	float L = HCV.z - HCV.y * 0.5;
+    	float S = HCV.y / (1.0000001 - abs(L * 2 - 1));
+    	return float3(HCV.x, S, L);
 }
 
-float Hue2RGB(float v1, float v2, float vH) 
+float3 HSL2RGB(in float3 HSL)
 {
-    float v3 = 0.0;
-
-    if     (vH < 0.0) { vH += 1.0; }
-    else if(vH > 1.0) { vH -= 1.0; }
-
-    if     ((6.0 * vH) < 1.0) { v3 = v1 + (v2 - v1) * 6.0 * vH; }
-    else if((2.0 * vH) < 1.0) { v3 = v2; }
-    else if((3.0 * vH) < 2.0) { v3 = v1 + (v2 - v1) * (0.6667 - vH) * 6.0; }
-    else                      { v3 = v1; }
-
-    return v3;
+	HSL = saturate(HSL);
+	//HSL.z *= 0.99;
+    	float3 RGB = saturate(float3(abs(HSL.x * 6.0 - 3.0) - 1.0,2.0 - abs(HSL.x * 6.0 - 2.0),2.0 - abs(HSL.x * 6.0 - 4.0)));
+    	float C = (1 - abs(2 * HSL.z - 1)) * HSL.y;
+    	return (RGB - 0.5) * C + HSL.z;
 }
 
-vec3 HSL2RGB(vec3 vHSL) 
+float3 colorAdjust(float3 cRGB) 
 {
-    float cR = 0.0, cG = cR, cB = cR;
-
-    if(vHSL[1] == 0.0) {
-      cR = vHSL[2], cG = cR, cB = cR;
-
-    } else {
-        float v1 = 0.0, v2 = v1;
-
-        if(vHSL[2] < 0.5) { v2 = vHSL[2] * (1.0 + vHSL[1] ); }
-        else              { v2 = (vHSL[2] + vHSL[1] ) - (vHSL[1] * vHSL[2] ); }
-
-        v1 = 2.0 * vHSL[2] - v2;
-
-        cR = Hue2RGB(v1, v2, vHSL[0] + 0.3333);
-        cG = Hue2RGB(v1, v2, vHSL[0] );
-        cB = Hue2RGB(v1, v2, vHSL[0] - 0.3333);
-    }
-    return vec3(cR, cG, cB);
-}
-
-vec3 colorAdjust(vec3 cRGB) 
-{
-    vec3 cHSL = RGB2HSL(cRGB);
+    float3 cHSL = RGB2HSL(cRGB);
 
     float cr = 1.0 / ShdLevels;
 
     // brightness modifier
-    float BrtModify = mod(cHSL[2], cr); 
+    float BrtModify = mod(cHSL.z, cr); 
 
-    if     (cHSL[2] > WhtCutoff) { cHSL[1]  = 1.0; cHSL[2] = 1.0; }
-    else if(cHSL[2] > BlkCutoff) { cHSL[1] *= SatModify; cHSL[2] += (cHSL[2] * cr - BrtModify); }
-    else                         { cHSL[1]  = 0.0; cHSL[2] = 0.0; }
+    if     (cHSL.z > WhtCutoff) { cHSL.y  = 1.0; cHSL.z = 1.0; }
+    else if(cHSL.z > BlkCutoff) { cHSL.y *= SatModify; cHSL.z += (cHSL.z * cr - BrtModify); }
+    else                         { cHSL.y  = 0.0; cHSL.z = 0.0; }
     cRGB = 1.2 * HSL2RGB(cHSL);
 
     return cRGB;
 }
 
-
-void main()
+void PS_MMJCel(in float4 pos : SV_POSITION, in float2 texcoord : TEXCOORD0, out float4 fragColor : COLOR0)
 {
-    vec3 c0 = COMPAT_TEXTURE(Source, TEX3.xy).rgb;
-    vec3 c1 = COMPAT_TEXTURE(Source, TEX2.xy).rgb;
-    vec3 c2 = COMPAT_TEXTURE(Source, TEX3.zy).rgb;
-    vec3 c3 = COMPAT_TEXTURE(Source, TEX1.xy).rgb;
-    vec3 c4 = COMPAT_TEXTURE(Source, TEX0.xy).rgb;
-    vec3 c5 = COMPAT_TEXTURE(Source, TEX1.zw).rgb;
-    vec3 c6 = COMPAT_TEXTURE(Source, TEX3.xw).rgb;
-    vec3 c7 = COMPAT_TEXTURE(Source, TEX2.zw).rgb;
-    vec3 c8 = COMPAT_TEXTURE(Source, TEX3.zw).rgb;
 
-    vec3 c9 = ((c0 + c2 + c6 + c8) * 0.15 + (c1 + c3 + c5 + c7) * 0.25 + c4) / 2.6;
+	float2 offset = float2(0.0,0.0);
+	float2 offset_inv = float2(0.0,0.0);
+	float2 TEX0 = texcoord.xy;
+	float2 TEX1 = float2(0.0,0.0);
+	float2 TEX1_INV = float2(0.0,0.0);
+	float2 TEX2 = float2(0.0,0.0);
+	float2 TEX2_INV = float2(0.0,0.0);
+	float2 TEX3 = float2(0.0,0.0);
+	float2 TEX3_INV = float2(0.0,0.0);
+	
+	offset = -(float2(1.0 / ReShade::ScreenSize.x, 0.0)); //XY
+	offset_inv = float2(1.0 / ReShade::ScreenSize.x,0.0); //ZW
+    TEX1 = TEX0 + offset;
+	TEX1_INV = TEX0 + offset_inv;
+	
+	offset = -(float2(0.0,(1.0 / ReShade::ScreenSize.y))); //XY
+	offset_inv = float2(0.0, (1.0 / ReShade::ScreenSize.y)); //ZW
+    
+    TEX2 = TEX0.xy + offset;
+	TEX2_INV = TEX0.xy + offset_inv;
+    TEX3 = TEX1.xy + offset;
+	TEX3_INV = TEX1.xy + offset_inv;
+	
+    float3 c0 = tex2D(RetroArchSRGB, TEX3.xy).rgb;
+    float3 c1 = tex2D(RetroArchSRGB, TEX2.xy).rgb;
+    float3 c2 = tex2D(RetroArchSRGB, float2(TEX3_INV.x,TEX3.y)).rgb;
+    float3 c3 = tex2D(RetroArchSRGB, TEX1.xy).rgb;
+    float3 c4 = tex2D(RetroArchSRGB, TEX0.xy).rgb;
+    float3 c5 = tex2D(RetroArchSRGB, TEX1_INV.xy).rgb;
+    float3 c6 = tex2D(RetroArchSRGB, float2(TEX3.x,TEX3_INV.y)).rgb;
+    float3 c7 = tex2D(RetroArchSRGB, TEX2_INV).rgb;
+    float3 c8 = tex2D(RetroArchSRGB, TEX3_INV).rgb;
+    float3 c9 = ((c0 + c2 + c6 + c8) * 0.15 + (c1 + c3 + c5 + c7) * 0.25 + c4) / 2.6;
 
-    vec3 o = vec3(1.0); vec3 h = vec3(0.05); vec3 hz = h; float k = 0.005; 
-    float kz = 0.007; float i = 0.0;
+    float3 o = float3(1.0,1.0,1.0); 
+	float3 h = float3(0.05,0.05,0.05); 
+	float3 hz = h; 
+	float k = 0.005; 
+    float kz = 0.007; 
+	float i = 0.0;
 
-    vec3 cz = (c9 + h) / (dot(o, c9) + k);
+    float3 cz = (c9 + h) / (dot(o, c9) + k);
+	float3 col = float3(0.0,0.0,0.0);
 
     hz = (cz - ((c0 + h) / (dot(o, c0) + k))); i  = kz / (dot(hz, hz) + kz);
     hz = (cz - ((c1 + h) / (dot(o, c1) + k))); i += kz / (dot(hz, hz) + kz);
@@ -293,10 +215,19 @@ void main()
     hz = (cz - ((c7 + h) / (dot(o, c7) + k))); i += kz / (dot(hz, hz) + kz);
     hz = (cz - ((c8 + h) / (dot(o, c8) + k))); i += kz / (dot(hz, hz) + kz);
 
-    i /= 8.0; i = pow(i, 0.75);
+    i /= 8.0; 
+	i = pow(i, 0.75);
 
     if(i < OtlModify) { i = OtlModify; }
     c9 = min(o, min(c9, c9 + dot(o, c9)));
-    FragColor.rgb = mix(c4 * i, colorAdjust(c9 * i), ShdWeight);
+	col = lerp(c4 * i, colorAdjust(c9 * i), ShdWeight);
+    fragColor = float4(col,1.0);
 } 
-#endif
+
+technique MMJCelShader {
+    pass MMJCelShader {
+        VertexShader=PostProcessVS;
+        PixelShader=PS_MMJCel;
+		SRGBWriteEnable = true;
+    }
+}
